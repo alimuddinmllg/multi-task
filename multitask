@@ -1,0 +1,648 @@
+from nltk.sentiment.vader import SentimentIntensityAnalyzer
+from nltk import tokenize
+import pandas as pd
+import spacy
+import numpy as np
+import os
+from textblob import TextBlob
+from operator import itemgetter
+#Plain text parsers since we are parsing through text
+import string
+#for tokenization
+import en_core_web_sm
+nlp = en_core_web_sm.load()
+from keras.layers import Dense, Activation, Concatenate
+from keras.layers import LSTM,Bidirectional, TimeDistributed, GRU
+from keras.layers.embeddings import Embedding
+from keras.preprocessing import sequence
+from keras.layers import Dense, Dropout
+from keras.layers import Flatten
+from keras.layers import Embedding
+from keras.layers.convolutional import Conv1D
+from keras.layers.convolutional import MaxPooling1D
+from itertools import combinations
+import keras.backend as K
+from keras.models import Sequential,Model
+from sklearn import svm
+from sklearn.model_selection import cross_val_score, GridSearchCV, train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score, precision_score, recall_score, f1_score
+from sklearn.model_selection import KFold
+from keras.layers import Dense, Activation, Input, concatenate
+from keras.utils.vis_utils import plot_model
+
+def getsample(data,label,dataset):
+    data=pd.concat([data,dataset],axis=1)
+#     print (data)
+    pos=data.loc[data[label]==1].iloc[:10200,:]
+    neg=data.loc[data[label]==0].iloc[:10200,:]
+    gabamazondata=pd.concat([pos,neg],axis=0).reset_index(drop=True)
+    return gabamazondata
+    
+
+
+  #############################################################
+def training(data1,data2,timestep,dim):
+#     timestep=1024
+#     dim=1
+    
+    x_train1, x_test1, y_train1, y_test1 = train_test_split(data1, data2, test_size=0.2, random_state=42)
+    x_train1, x_val1, y_train1, y_val1 = train_test_split(x_train1, y_train1, test_size=0.2, random_state=42)
+   
+    x_train1=x_train1.reshape((x_train1.shape[0],timestep,dim))
+    x_test1=x_test1.reshape((x_test1.shape[0],timestep,dim))
+    x_val1=x_val1.reshape((x_val1.shape[0],timestep,dim))
+    
+    return x_train1,y_train1,x_test1,y_test1,x_val1,y_val1
+    
+
+ 
+def themodel(d1,d2):
+    kf = KFold(n_splits=10, shuffle=True, random_state=42)
+    dr=['full_review','noun phrase','emotion','unigram','bigram','trigram','uni_big','uni_bi_tri']
+    mdl=['BILSTM','LSTM','GRU','MLP','CNN']
+    predictvalue=[]
+    validationvalue=[]
+    timestep=1
+    dim=1024
+    
+    
+    
+    for m in range(len(mdl)):
+        print ('model ',mdl[m])
+        x_train,x_test,y_train,y_test=[],[],[],[]
+        x_train2,x_test2,y_train2,y_test2=[],[],[],[]
+        d1_input,d2_input=[],[]
+        predictfake,predicthelp=[pd.DataFrame() for i in range(8)], [pd.DataFrame() for i in range(8)]
+        ytestfake,ytesthelp=[pd.DataFrame() for i in range(8)],[pd.DataFrame() for i in range(8)]
+        X=d1[0][0]
+        c=0
+        input_dim = d1[0][0].shape[1] 
+        fscore1,fscore2,fscore3,fscore4,fscore5,fscore6,fscore7,fscore8,fscore9,fscore10,fscore11,fscore12,fscore13,fscore14,fscore15,fscore16=[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]
+        for train_index, test_index in kf.split(X):
+            c+=1
+            print (c)
+            for d in range(len(d1)):
+                
+                x_train.append(d1[d][0][train_index]), x_test.append(d1[d][0][test_index])
+                y_train.append(d1[d][1][train_index]), y_test.append(d1[d][1][test_index]) 
+                
+                x_train2.append(d2[d][0][train_index]), x_test2.append(d2[d][0][test_index])
+                y_train2.append(d2[d][1][train_index]), y_test2.append(d2[d][1][test_index]) 
+        
+                if mdl[m]=='CNN':
+                    timestep=1024
+                    dim=1
+                    d1_input.append(Input((timestep,dim)))
+                    d2_input.append(Input((timestep,dim)))
+                else:
+                    timestep=1
+                    dim=1024
+                    d1_input.append(Input((timestep,dim)))
+                    d2_input.append(Input((timestep,dim)))
+                                        
+                x_train[d]=x_train[d].reshape((x_train[d].shape[0],timestep,dim))
+                x_test[d]=x_test[d].reshape((x_test[d].shape[0],timestep,dim))
+                
+                x_train2[d]=x_train2[d].reshape((x_train2[d].shape[0],timestep,dim))
+                x_test2[d]=x_test2[d].reshape((x_test2[d].shape[0],timestep,dim))
+            
+            if mdl[m]=='CNN':
+                shared_lstm = Conv1D(128, 5)
+            elif mdl[m]=='BILSTM':
+                shared_lstm = Bidirectional(LSTM(128))
+            elif mdl[m]=='LSTM':
+                shared_lstm = LSTM(128)
+            elif mdl[m]=='GRU':
+                shared_lstm = GRU(128)
+            else:
+                shared_lstm = Dense(128, activation='relu',input_dim=input_dim)
+            
+            encoded_data1_a = shared_lstm(d1_input[0])
+            encoded_data1_b = shared_lstm(d1_input[1])
+            encoded_data1_c = shared_lstm(d1_input[2])
+            encoded_data1_d = shared_lstm(d1_input[3])
+            encoded_data1_e = shared_lstm(d1_input[4])
+            encoded_data1_f = shared_lstm(d1_input[5])
+            encoded_data1_g = shared_lstm(d1_input[6])
+            encoded_data1_h = shared_lstm(d1_input[7])
+            
+            encoded_data2_a = shared_lstm(d2_input[0])
+            encoded_data2_b = shared_lstm(d2_input[1])
+            encoded_data2_c = shared_lstm(d2_input[2])
+            encoded_data2_d = shared_lstm(d2_input[3])
+            encoded_data2_e = shared_lstm(d2_input[4])
+            encoded_data2_f = shared_lstm(d2_input[5])
+            encoded_data2_g = shared_lstm(d2_input[6])
+            encoded_data2_h = shared_lstm(d2_input[7])
+            
+            if mdl[m]=='CNN':
+                shared_lstm =MaxPooling1D(pool_size=2)
+            
+                encoded_data1_a = shared_lstm(encoded_data1_a)
+                encoded_data1_b = shared_lstm(encoded_data1_b)
+                encoded_data1_c = shared_lstm(encoded_data1_c)
+                encoded_data1_d = shared_lstm(encoded_data1_d)
+                encoded_data1_e = shared_lstm(encoded_data1_e)
+                encoded_data1_f = shared_lstm(encoded_data1_f)
+                encoded_data1_g = shared_lstm(encoded_data1_g)
+                encoded_data1_h = shared_lstm(encoded_data1_h)
+            
+                encoded_data2_a = shared_lstm(encoded_data2_a)
+                encoded_data2_b = shared_lstm(encoded_data2_b)
+                encoded_data2_c = shared_lstm(encoded_data2_c)
+                encoded_data2_d = shared_lstm(encoded_data2_d)
+                encoded_data2_e = shared_lstm(encoded_data2_e)
+                encoded_data2_f = shared_lstm(encoded_data2_f)
+                encoded_data2_g = shared_lstm(encoded_data2_g)
+                encoded_data2_h = shared_lstm(encoded_data2_h)
+            
+            
+      
+            shared =Flatten() 
+            shared2 =Flatten()
+            encoded_data1_a = shared(encoded_data1_a)
+            encoded_data1_b = shared(encoded_data1_b)
+            encoded_data1_c = shared(encoded_data1_c)
+            encoded_data1_d = shared(encoded_data1_d)
+            encoded_data1_e = shared(encoded_data1_e)
+            encoded_data1_f = shared(encoded_data1_f)
+            encoded_data1_g = shared(encoded_data1_g)
+            encoded_data1_h = shared(encoded_data1_h)
+                
+            encoded_data2_a = shared2(encoded_data2_a)
+            encoded_data2_b = shared2(encoded_data2_b)
+            encoded_data2_c = shared2(encoded_data2_c)
+            encoded_data2_d = shared2(encoded_data2_d)
+            encoded_data2_e = shared2(encoded_data2_e)
+            encoded_data2_f = shared2(encoded_data2_f)
+            encoded_data2_g = shared2(encoded_data2_g)
+            encoded_data2_h = shared2(encoded_data2_h)
+            
+            shared_2 = Dense(128, activation="relu")
+            shared_3= Dense(128, activation="relu") 
+            
+            encoded_data1_a = shared_2(encoded_data1_a)
+            encoded_data1_b = shared_2(encoded_data1_b)
+            encoded_data1_c = shared_2(encoded_data1_c)
+            encoded_data1_d = shared_2(encoded_data1_d)
+            encoded_data1_e = shared_2(encoded_data1_e)
+            encoded_data1_f = shared_2(encoded_data1_f)
+            encoded_data1_g = shared_2(encoded_data1_g)
+            encoded_data1_h = shared_2(encoded_data1_h)
+            
+            encoded_data2_a = shared_3(encoded_data2_a)
+            encoded_data2_b = shared_3(encoded_data2_b)
+            encoded_data2_c = shared_3(encoded_data2_c)
+            encoded_data2_d = shared_3(encoded_data2_d)
+            encoded_data2_e = shared_3(encoded_data2_e)
+            encoded_data2_f = shared_3(encoded_data2_f)
+            encoded_data2_g = shared_3(encoded_data2_g)
+            encoded_data2_h = shared_3(encoded_data2_h)
+            
+            shared_2 = Dense(128, activation="relu")
+            shared_3= Dense(128, activation="relu") 
+            
+            encoded_data1_a = shared_2(encoded_data1_a)
+            encoded_data1_b = shared_2(encoded_data1_b)
+            encoded_data1_c = shared_2(encoded_data1_c)
+            encoded_data1_d = shared_2(encoded_data1_d)
+            encoded_data1_e = shared_2(encoded_data1_e)
+            encoded_data1_f = shared_2(encoded_data1_f)
+            encoded_data1_g = shared_2(encoded_data1_g)
+            encoded_data1_h = shared_2(encoded_data1_h)
+            
+            encoded_data2_a = shared_3(encoded_data2_a)
+            encoded_data2_b = shared_3(encoded_data2_b)
+            encoded_data2_c = shared_3(encoded_data2_c)
+            encoded_data2_d = shared_3(encoded_data2_d)
+            encoded_data2_e = shared_3(encoded_data2_e)
+            encoded_data2_f = shared_3(encoded_data2_f)
+            encoded_data2_g = shared_3(encoded_data2_g)
+            encoded_data2_h = shared_3(encoded_data2_h)
+            
+                       
+            predictions1 = Dense(1, activation='sigmoid')(encoded_data1_a)
+            predictions2 = Dense(1, activation='sigmoid')(encoded_data1_b)
+            predictions3 = Dense(1, activation='sigmoid')(encoded_data1_c)
+            predictions4 = Dense(1, activation='sigmoid')(encoded_data1_d)
+            predictions5 = Dense(1, activation='sigmoid')(encoded_data1_e)
+            predictions6 = Dense(1, activation='sigmoid')(encoded_data1_f)
+            predictions7 = Dense(1, activation='sigmoid')(encoded_data1_g)
+            predictions8 = Dense(1, activation='sigmoid')(encoded_data1_h)
+            
+            predictions9 = Dense(1, activation='sigmoid')(encoded_data2_a)
+            predictions10 = Dense(1, activation='sigmoid')(encoded_data2_b)
+            predictions11 = Dense(1, activation='sigmoid')(encoded_data2_c)
+            predictions12 = Dense(1, activation='sigmoid')(encoded_data2_d)
+            predictions13 = Dense(1, activation='sigmoid')(encoded_data2_e)
+            predictions14 = Dense(1, activation='sigmoid')(encoded_data2_f)
+            predictions15 = Dense(1, activation='sigmoid')(encoded_data2_g)
+            predictions16 = Dense(1, activation='sigmoid')(encoded_data2_h)
+
+
+            
+            model = Model([d1_input[0],d1_input[1],d1_input[2],d1_input[3],d1_input[4],d1_input[5],d1_input[6],d1_input[7], 
+                                    d2_input[0],d2_input[1],d2_input[2],d2_input[3],d2_input[4],d2_input[5],d2_input[6],d2_input[7]], 
+                            [predictions1, predictions2, predictions3, predictions4, predictions5, predictions6, predictions7, 
+                                     predictions8, predictions9, predictions10, predictions11, predictions12, predictions13, predictions14, predictions15, predictions16])
+            
+            model.compile(optimizer='adam',
+                            loss='binary_crossentropy',
+                            metrics=['accuracy'])
+                            
+                            
+            history= model.fit([x_train[0],x_train[1],x_train[2],x_train[3],x_train[4],x_train[5],x_train[6],x_train[7],x_train2[0],x_train2[1],x_train2[2],x_train2[3],x_train2[4],
+                                x_train2[5],x_train2[6],x_train2[7]],[y_train[0],y_train[1],y_train[2],y_train[3],y_train[4],y_train[5],y_train[6],y_train[7],y_train2[0],y_train2[1],
+                                y_train2[2],y_train2[3],y_train2[4],y_train2[5],y_train2[6],y_train2[7]],epochs=100, batch_size=300,verbose=0)                            
+                            
+
+        
+        
+            y1,y2,y3,y4,y5,y6,y7,y8,y9,y10,y11,y12,y13,y14,y15,y16=model.predict([x_test[0],x_test[1],x_test[2],x_test[3],x_test[4],x_test[5],x_test[6],x_test[7],x_test2[0],x_test2[1],
+                                                                                 x_test2[2],x_test2[3],x_test2[4],x_test2[5],x_test2[6],x_test2[7]]) 
+            y1=pd.DataFrame(y1,columns=['predict'])
+            y2=pd.DataFrame(y2,columns=['predict'])
+            y3=pd.DataFrame(y3,columns=['predict'])
+            y4=pd.DataFrame(y4,columns=['predict'])
+            y5=pd.DataFrame(y5,columns=['predict'])
+            y6=pd.DataFrame(y6,columns=['predict'])
+            y7=pd.DataFrame(y7,columns=['predict'])
+            y8=pd.DataFrame(y8,columns=['predict'])
+            y9=pd.DataFrame(y9,columns=['predict'])
+            y10=pd.DataFrame(y10,columns=['predict'])
+            y11=pd.DataFrame(y11,columns=['predict'])
+            y12=pd.DataFrame(y12,columns=['predict'])
+            y13=pd.DataFrame(y13,columns=['predict'])
+            y14=pd.DataFrame(y14,columns=['predict'])
+            y15=pd.DataFrame(y15,columns=['predict'])
+            y16=pd.DataFrame(y16,columns=['predict'])
+                
+            y1["predict"] = np.where(y1["predict"] >0.5, 1, 0)
+            y2["predict"] = np.where(y2["predict"] >0.5, 1, 0)
+            y3["predict"] = np.where(y3["predict"] >0.5, 1, 0)
+            y4["predict"] = np.where(y4["predict"] >0.5, 1, 0)
+            y5["predict"] = np.where(y5["predict"] >0.5, 1, 0)
+            y6["predict"] = np.where(y6["predict"] >0.5, 1, 0)
+            y7["predict"] = np.where(y7["predict"] >0.5, 1, 0)
+            y8["predict"] = np.where(y8["predict"] >0.5, 1, 0)
+            y9["predict"] = np.where(y9["predict"] >0.5, 1, 0)
+            y10["predict"] = np.where(y10["predict"] >0.5, 1, 0)
+            y11["predict"] = np.where(y11["predict"] >0.5, 1, 0)
+            y12["predict"] = np.where(y12["predict"] >0.5, 1, 0)
+            y13["predict"] = np.where(y13["predict"] >0.5, 1, 0)
+            y14["predict"] = np.where(y14["predict"] >0.5, 1, 0)
+            y15["predict"] = np.where(y15["predict"] >0.5, 1, 0)
+            y16["predict"] = np.where(y16["predict"] >0.5, 1, 0)
+                
+            ls=[]
+            ls.append(y1)
+            ls.append(y2)
+            ls.append(y3)
+            ls.append(y4)
+            ls.append(y5)
+            ls.append(y6)
+            ls.append(y7)
+            ls.append(y8)
+            ls.append(y9)
+            ls.append(y10)
+            ls.append(y11)
+            ls.append(y12)
+            ls.append(y13)
+            ls.append(y14)
+            ls.append(y15)
+            ls.append(y16)
+                
+            for p in range(len(d1)):
+                predictfake[p]=pd.concat([predictfake[p],ls[p]],axis=0).reset_index(drop=True)
+                ytestfake[p]=pd.concat([ytestfake[p],pd.DataFrame(y_test[p],columns=['ytest'])],axis=0).reset_index(drop=True)
+                
+                predicthelp[p]=pd.concat([predicthelp[p],ls[p+2]],axis=0).reset_index(drop=True)
+                ytesthelp[p]=pd.concat([ytesthelp[p],pd.DataFrame(y_test2[p],columns=['ytest'])],axis=0).reset_index(drop=True)
+        
+                       
+
+            fscore1.append(f1_score(y_test[0],y1.values))
+            fscore2.append(f1_score(y_test[1],y2.values))
+            fscore3.append(f1_score(y_test[2],y3.values))
+            fscore4.append(f1_score(y_test[3],y4.values))
+            fscore5.append(f1_score(y_test[4],y5.values))
+            fscore6.append(f1_score(y_test[5],y6.values))
+            fscore7.append(f1_score(y_test[6],y7.values))
+            fscore8.append(f1_score(y_test[7],y8.values))
+            print ('---------------------------------------------------------------')
+            fscore9.append(f1_score(y_test2[0],y9.values))
+            fscore10.append(f1_score(y_test2[1],y10.values))
+            fscore11.append(f1_score(y_test2[2],y11.values))
+            fscore12.append(f1_score(y_test2[3],y12.values))
+            fscore13.append(f1_score(y_test2[4],y13.values))
+            fscore14.append(f1_score(y_test2[5],y14.values))
+            fscore15.append(f1_score(y_test2[6],y15.values))
+            fscore16.append(f1_score(y_test2[7],y16.values))
+
+
+
+            print (f1_score(y_test[0],y1.values))
+            print (f1_score(y_test[1],y2.values))
+            print (f1_score(y_test[2],y3.values))
+            print (f1_score(y_test[3],y4.values))
+            print (f1_score(y_test[4],y5.values))
+            print (f1_score(y_test[5],y6.values))
+            print (f1_score(y_test[6],y7.values))
+            print (f1_score(y_test[7],y8.values))
+            print ('---------------------------------------------------------------')
+            print (f1_score(y_test2[0],y9.values))
+            print (f1_score(y_test2[1],y10.values))
+            print (f1_score(y_test2[2],y11.values))
+            print (f1_score(y_test2[3],y12.values))
+            print (f1_score(y_test2[4],y13.values))
+            print (f1_score(y_test2[5],y14.values))
+            print (f1_score(y_test2[6],y15.values))
+            print (f1_score(y_test2[7],y16.values))
+            print ('===============================================================') 
+        print ('average F1',np.mean(fscore1))
+        print ('average F1',np.mean(fscore2))
+        print ('average F1',np.mean(fscore3))
+        print ('average F1',np.mean(fscore4))
+        print ('average F1',np.mean(fscore5))
+        print ('average F1',np.mean(fscore6))
+        print ('average F1',np.mean(fscore7))
+        print ('average F1',np.mean(fscore8))
+        print ('average F1',np.mean(fscore9))
+        print ('average F1',np.mean(fscore10))
+        print ('average F1',np.mean(fscore11))
+        print ('average F1',np.mean(fscore12))
+        print ('average F1',np.mean(fscore13))
+        print ('average F1',np.mean(fscore14))
+        print ('average F1',np.mean(fscore15))
+        print ('average F1',np.mean(fscore16))
+
+        predictvalue.append((predictfake,ytestfake,predicthelp,ytesthelp))
+    return predictvalue
+
+
+def theconcat(d1,d2):
+    kf = KFold(n_splits=10, shuffle=True, random_state=42)
+    dr=['full_review','noun phrase','emotion','unigram','bigram','trigram','uni_big','uni_bi_tri']
+    mdl=['BILSTM','LSTM','GRU','MLP','CNN']
+    predictvalue=[]
+    validationvalue=[]
+    timestep=1
+    dim=1024
+    
+    
+    
+    for m in range(len(mdl)):
+        print ('model ',mdl[m])
+        x_train,x_test,y_train,y_test=[],[],[],[]
+        x_train2,x_test2,y_train2,y_test2=[],[],[],[]
+        d1_input,d2_input=[],[]
+        predictfake,predicthelp=[pd.DataFrame() for i in range(8)], [pd.DataFrame() for i in range(8)]
+        ytestfake,ytesthelp=[pd.DataFrame() for i in range(8)],[pd.DataFrame() for i in range(8)]
+        X=d1[0][0]
+        c=0
+        input_dim = d1[0][0].shape[1] 
+        ypred_fake,ypred_helpful=pd.DataFrame(),pd.DataFrame()
+        ytest_fake,ytest_helpful=pd.DataFrame(),pd.DataFrame()
+        fscore1,fscore2,fscore3,fscore4,fscore5,fscore6,fscore7,fscore8,fscore9,fscore10,fscore11,fscore12,fscore13,fscore14,fscore15,fscore16=[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]
+        for train_index, test_index in kf.split(X):
+            c+=1
+            print (c)
+            for d in range(len(d1)):
+                
+                x_train.append(d1[d][0][train_index]), x_test.append(d1[d][0][test_index])
+                y_train.append(d1[d][1][train_index]), y_test.append(d1[d][1][test_index]) 
+                
+                x_train2.append(d2[d][0][train_index]), x_test2.append(d2[d][0][test_index])
+                y_train2.append(d2[d][1][train_index]), y_test2.append(d2[d][1][test_index]) 
+        
+                if mdl[m]=='CNN':
+                    timestep=1024
+                    dim=1
+                    d1_input.append(Input((timestep,dim)))
+                    d2_input.append(Input((timestep,dim)))
+                else:
+                    timestep=1
+                    dim=1024
+                    d1_input.append(Input((timestep,dim)))
+                    d2_input.append(Input((timestep,dim)))
+                                        
+                x_train[d]=x_train[d].reshape((x_train[d].shape[0],timestep,dim))
+                x_test[d]=x_test[d].reshape((x_test[d].shape[0],timestep,dim))
+                
+                x_train2[d]=x_train2[d].reshape((x_train2[d].shape[0],timestep,dim))
+                x_test2[d]=x_test2[d].reshape((x_test2[d].shape[0],timestep,dim))
+            
+            if mdl[m]=='CNN':
+                shared_lstm = Conv1D(128, 5)
+            elif mdl[m]=='BILSTM':
+                shared_lstm = Bidirectional(LSTM(128))
+            elif mdl[m]=='LSTM':
+                shared_lstm = LSTM(128)
+            elif mdl[m]=='GRU':
+                shared_lstm = GRU(128)
+            else:
+                shared_lstm = Dense(128, activation='relu',input_dim=input_dim)
+            
+
+            
+            w = Concatenate()([d1_input[0], d1_input[1], d1_input[2], d1_input[3], d1_input[4], d1_input[5], d1_input[6], d1_input[7]])
+            w2 = Concatenate()([d2_input[0], d2_input[1], d2_input[2], d2_input[3], d2_input[4], d2_input[5], d2_input[6], d2_input[7]])
+            encoded_data1_a = shared_lstm(w)
+            encoded_data2_a = shared_lstm(w2)
+            
+            if mdl[m]=='CNN':
+                shared_lstm =MaxPooling1D(pool_size=2)
+            
+                encoded_data1_a = shared_lstm(encoded_data1_a)           
+                encoded_data2_a = shared_lstm(encoded_data2_a)
+
+            
+            
+      
+            shared =Flatten() 
+            shared2 =Flatten()
+            encoded_data1_a = shared(encoded_data1_a)
+
+                
+            encoded_data2_a = shared2(encoded_data2_a)
+
+            
+            shared_2 = Dense(128, activation="relu")
+            shared_3= Dense(128, activation="relu") 
+            
+            encoded_data1_a = shared_2(encoded_data1_a)
+
+            
+            encoded_data2_a = shared_3(encoded_data2_a)
+
+            
+                       
+            predictions1 = Dense(1, activation='sigmoid')(encoded_data1_a)
+
+            
+            predictions2 = Dense(1, activation='sigmoid')(encoded_data2_a)
+
+
+
+            
+            model = Model([d1_input[0],d1_input[1],d1_input[2],d1_input[3],d1_input[4],d1_input[5],d1_input[6],d1_input[7], 
+                                    d2_input[0],d2_input[1],d2_input[2],d2_input[3],d2_input[4],d2_input[5],d2_input[6],d2_input[7]], 
+                            [predictions1, predictions2])
+            
+            model.compile(optimizer='adam',
+                            loss='binary_crossentropy',
+                            metrics=['accuracy'])
+                            
+                            
+            history= model.fit([x_train[0],x_train[1],x_train[2],x_train[3],x_train[4],x_train[5],x_train[6],x_train[7],x_train2[0],x_train2[1],x_train2[2],x_train2[3],x_train2[4],
+                                x_train2[5],x_train2[6],x_train2[7]],[y_train[0],y_train2[0]],epochs=100, batch_size=300,verbose=0)                            
+                            
+
+        
+        
+            y1,y2=model.predict([x_test[0],x_test[1],x_test[2],x_test[3],x_test[4],x_test[5],x_test[6],x_test[7],x_test2[0],x_test2[1],
+                                                                                 x_test2[2],x_test2[3],x_test2[4],x_test2[5],x_test2[6],x_test2[7]]) 
+            y1=pd.DataFrame(y1,columns=['predict'])
+            y2=pd.DataFrame(y2,columns=['predict'])
+ 
+                
+            y1["predict"] = np.where(y1["predict"] >0.5, 1, 0)
+            y2["predict"] = np.where(y2["predict"] >0.5, 1, 0)
+
+                
+            ls=[]
+            ls.append(y1)
+            ls.append(y2)
+
+            ypred_fake=pd.concat([ypred_fake,ls[0]],axis=0)
+            ytest_fake=pd.concat([ytest_fake,pd.DataFrame(y_test[0])],axis=0)
+            ypred_helpful=pd.concat([ypred_helpful,ls[1]],axis=0)
+            ytest_helpful=pd.concat([ytest_helpful,pd.DataFrame(y_test2[0])],axis=0)        
+                       
+
+            fscore1.append(f1_score(y_test[0],y1.values))
+            fscore2.append(f1_score(y_test2[0],y2.values))
+
+
+
+
+            print (f1_score(y_test[0],y1.values))
+            print (f1_score(y_test2[0],y2.values))
+
+            print ('===============================================================') 
+        print ('average F1',np.mean(fscore1))
+        print ('average F1',np.mean(fscore2))
+
+
+        predictvalue.append((predictfake,ytestfake,predicthelp,ytesthelp))
+    return predictvalue
+
+
+     
+if __name__=="__main__":
+
+
+    
+    amazon_fullrev=pd.read_csv('Database/Yelp/Amazonfullroberta.csv')
+    amazon_np_phrase_fullrev=pd.read_csv('Database/Yelp/Amazonfullroberta_npphrase.csv')
+    amazon_emotion_fullrev=pd.read_csv('Database/Yelp/Amazonfullroberta_emotion.csv')
+    amazon_ngram1=pd.read_csv('Database/Yelp/Amazonfullroberta_ngram1.csv')
+    amazon_ngram2=pd.read_csv('Database/Yelp/Amazonfullroberta_ngram2.csv')
+    amazon_ngram3=pd.read_csv('Database/Yelp/Amazonfullroberta_ngram3.csv')
+    amazon_ngram12=pd.read_csv('Database/Yelp/Amazonfullroberta_combine_n1_and_n2.csv')
+    amazon_ngram123=pd.read_csv('Database/Yelp/Amazonfullroberta_combine_n1_and_n2_n3.csv')      
+
+    
+
+
+
+    amazonhelpful=pd.read_csv('Database/Yelp/Amazonhelpfuldata.csv').reset_index(drop=True)
+    amazonhelpfuldata=pd.read_csv('Database/Yelp/Amazonhelpfulfullroberta.csv').reset_index(drop=True)
+    amazonhelpful_np_phrase_fullrev=pd.read_csv('Database/Yelp/Amazonhelpfulfullroberta_npphrase.csv')
+    amazonhelpful_emotion_fullrev=pd.read_csv('Database/Yelp/Amazonhelpfulfullroberta_emotion.csv')
+    amazonhelpful_ngram1=pd.read_csv('Database/Yelp/Amazonhelpfulfullroberta_ngram1.csv')
+    amazonhelpful_ngram2=pd.read_csv('Database/Yelp/Amazonhelpfulfullroberta_ngram2.csv')
+    amazonhelpful_ngram3=pd.read_csv('Database/Yelp/Amazonhelpfulfullroberta_ngram3.csv')
+    amazonhelpful_ngram12=pd.read_csv('Database/Yelp/Amazonhelpfulfullroberta_combine_n1_and_n2.csv')
+    amazonhelpful_ngram123=pd.read_csv('Database/Yelp/Amazonhelpfulfullroberta_combine_n1_and_n2_n3.csv')
+    
+    
+    dataset=amazon_fullrev['LABEL']
+    amazon_fullrev=getsample(amazon_fullrev.drop('LABEL',axis=1),'LABEL',dataset)
+    amazon_np_phrase_fullrev=getsample(amazon_np_phrase_fullrev,'LABEL',dataset)
+    amazon_emotion_fullrev=getsample(amazon_emotion_fullrev,'LABEL',dataset)
+    amazon_ngram1=getsample(amazon_ngram1,'LABEL',dataset)
+    amazon_ngram2=getsample(amazon_ngram2,'LABEL',dataset)
+    amazon_ngram3=getsample(amazon_ngram3,'LABEL',dataset)
+    amazon_ngram12=getsample(amazon_ngram12,'LABEL',dataset)
+    amazon_ngram123=getsample(amazon_ngram123,'LABEL',dataset)
+    
+
+    
+    dataset=amazonhelpfuldata['LABEL']
+    amazonhelpfuldata=getsample(amazonhelpfuldata.drop('LABEL',axis=1),'LABEL',dataset)
+    amazonhelpful_np_phrase_fullrev=getsample(amazonhelpful_np_phrase_fullrev,'LABEL',dataset)
+    amazonhelpful_emotion_fullrev=getsample(amazonhelpful_emotion_fullrev,'LABEL',dataset)
+    amazonhelpfulgram1=getsample(amazonhelpful_ngram1,'LABEL',dataset)
+    amazonhelpfulgram2=getsample(amazonhelpful_ngram2,'LABEL',dataset)
+    amazonhelpfulgram3=getsample(amazonhelpful_ngram3,'LABEL',dataset)
+    amazonhelpfulgram12=getsample(amazonhelpful_ngram12,'LABEL',dataset)
+    amazonhelpfulgram123=getsample(amazonhelpful_ngram123,'LABEL',dataset)    
+    
+    print (amazon_fullrev.shape,amazon_np_phrase_fullrev.shape,amazon_emotion_fullrev.shape,amazon_ngram1.shape,amazon_ngram2.shape,amazon_ngram3.shape,amazon_ngram12.shape,amazon_ngram123.shape)
+    print (amazonhelpfuldata.shape,amazonhelpful_np_phrase_fullrev.shape,amazonhelpful_emotion_fullrev.shape,amazonhelpfulgram1.shape,amazonhelpfulgram2.shape,amazonhelpfulgram3.shape,amazonhelpfulgram12.shape,amazonhelpfulgram123.shape)
+    
+#    data1=[]
+#    data1.append((amazondata_fullrev.drop('LABEL',axis=1).values,amazondata_fullrev['LABEL'].values))
+#    data1.append((amazondata_np_phrase_fullrev.drop('LABEL',axis=1).values,amazondata_fullrev['LABEL'].values))
+#    data1.append((amazondata_emotion_fullrev.drop('LABEL',axis=1).values,amazondata_fullrev['LABEL'].values))
+#    data1.append((amazongram1.drop('LABEL',axis=1).values,amazondata_fullrev['LABEL'].values))
+#    data1.append((amazongram2.drop('LABEL',axis=1).values, amazondata_fullrev['LABEL'].values))
+#    data1.append((amazongram3.drop('LABEL',axis=1).values,amazondata_fullrev['LABEL'].values))
+#    data1.append((amazongram12.drop('LABEL',axis=1).values,amazondata_fullrev['LABEL'].values))
+#    data1.append((amazongram123.drop('LABEL',axis=1).values,amazondata_fullrev['LABEL'].values))
+    
+    data1=[]
+    data1.append((amazon_fullrev.drop(['LABEL'],axis=1).values,amazon_fullrev['LABEL'].values))
+    data1.append((amazon_np_phrase_fullrev.drop('LABEL',axis=1).values,amazon_fullrev['LABEL'].values))
+    data1.append((amazon_emotion_fullrev.drop('LABEL',axis=1).values,amazon_fullrev['LABEL'].values))
+    data1.append((amazon_ngram1.drop('LABEL',axis=1).values,amazon_fullrev['LABEL'].values))
+    data1.append((amazon_ngram2.drop('LABEL',axis=1).values, amazon_fullrev['LABEL'].values))
+    data1.append((amazon_ngram3.drop('LABEL',axis=1).values,amazon_fullrev['LABEL'].values))
+    data1.append((amazon_ngram12.drop('LABEL',axis=1).values,amazon_fullrev['LABEL'].values))
+    data1.append((amazon_ngram123.drop('LABEL',axis=1).values,amazon_fullrev['LABEL'].values))
+        
+    data2=[]
+#    data2.append((amazonhelpfuldata.drop('LABEL',axis=1).values,amazonhelpfuldata['LABEL'].values))
+#    data2.append((amazonhelpful_np_phrase_fullrev.drop('LABEL',axis=1).values,amazonhelpfuldata['LABEL'].values))
+#    data2.append((amazonhelpful_emotion_fullrev.drop('LABEL',axis=1).values, amazonhelpfuldata['LABEL'].values))
+#    data2.append((amazonhelpfulgram1.drop('LABEL',axis=1).values, amazonhelpfuldata['LABEL'].values))
+#    data2.append((amazonhelpfulgram2.drop('LABEL',axis=1).values, amazonhelpfuldata['LABEL'].values))
+ #   data2.append((amazonhelpfulgram3.drop('LABEL',axis=1).values,amazonhelpfuldata['LABEL'].values))
+#    data2.append((amazonhelpfulgram12.drop('LABEL',axis=1).values,amazonhelpfuldata['LABEL'].values))
+#    data2.append((amazonhelpfulgram123.drop('LABEL',axis=1).values,amazonhelpfuldata['LABEL'].values))
+            
+    data2.append((amazonhelpfuldata.drop('LABEL',axis=1).values,amazonhelpfuldata['LABEL'].values))
+    data2.append((amazonhelpful_np_phrase_fullrev.drop('LABEL',axis=1).values,amazonhelpfuldata['LABEL'].values))
+    data2.append((amazonhelpful_emotion_fullrev.drop('LABEL',axis=1).values, amazonhelpfuldata['LABEL'].values))
+    data2.append((amazonhelpfulgram1.drop('LABEL',axis=1).values, amazonhelpfuldata['LABEL'].values))
+    data2.append((amazonhelpfulgram2.drop('LABEL',axis=1).values, amazonhelpfuldata['LABEL'].values))
+    data2.append((amazonhelpfulgram3.drop('LABEL',axis=1).values,amazonhelpfuldata['LABEL'].values))
+    data2.append((amazonhelpfulgram12.drop('LABEL',axis=1).values,amazonhelpfuldata['LABEL'].values))
+    data2.append((amazonhelpfulgram123.drop('LABEL',axis=1).values,amazonhelpfuldata['LABEL'].values))
+    
+    
+    result=themodel(data1,data2)
+    
+    pd.DataFrame(result[0],columns=['fullembed','npphrase','emotion','ngram1','ngram2','ngram3','ngram12','ngram123']).to_pickle('Database/Yelp/Thesis/Chapter3/chapter3bilstm2.pickle')
+    pd.DataFrame(result[1],columns=['fullembed','npphrase','emotion','ngram1','ngram2','ngram3','ngram12','ngram123']).to_pickle('Database/Yelp/Thesis/Chapter3/chapter3lstm2.pickle')
+    pd.DataFrame(result[2],columns=['fullembed','npphrase','emotion','ngram1','ngram2','ngram3','ngram12','ngram123']).to_pickle('Database/Yelp/Thesis/Chapter3/chapter3gru2.pickle')
+    pd.DataFrame(result[3],columns=['fullembed','npphrase','emotion','ngram1','ngram2','ngram3','ngram12','ngram123']).to_pickle('Database/Yelp/Thesis/Chapter3/chapter3mlp2.pickle')
+    pd.DataFrame(result[4],columns=['fullembed','npphrase','emotion','ngram1','ngram2','ngram3','ngram12','ngram123']).to_pickle('Database/Yelp/Thesis/Chapter3/chapter3cnn2.pickle')
+    
+    result2=theconcat(data1,data2)
+    pd.DataFrame(result2).to_pickle('Database/Yelp/Thesis/Chapter3/amazonhelpfulconcat2.pickle')
+    
+    
+    
